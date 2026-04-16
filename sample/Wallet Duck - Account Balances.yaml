@@ -1,0 +1,603 @@
+---
+openapi: 3.0.3
+info:
+  title: Wallet Duck - Account Balances
+  version: 1.0.0
+  description: API para consulta de saldos de cuentas o billeteras internas de Wallet
+    Duck.
+servers:
+- url: https://api.walletduck.com/v1/operations-execution/cross-product/operational-services/internal-bank-account
+  description: AWS API Gateway simulated endpoint (Wallet Duck)
+paths:
+  /retrieve-balance:
+    get:
+      summary: Consulta de saldo
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/paymentsRequest'
+            examples:
+              ConsultaExitosa:
+                description: '`ESCENARIO` Consulta exitosa `DADO` que la billetera
+                  se encuentra activa `CUANDO` se consume la capacidad de consulta
+                  de saldo `ENTONCES` se retorna el saldo de la billetera digital
+                  exitosamente'
+                value:
+                - data:
+                    InvestmentFundReportRequest:
+                      MessageIdentification:
+                        Identification: yxq669gkjhnjkm96
+                        CreationDateTime: 2025-01-15T10:30:00Z
+                      ReportRequest:
+                      - Parameters:
+                          FinancialInstrumentDetails:
+                          - Identification:
+                              OtherIdentification:
+                              - Identification: "0001"
+                                Type:
+                                  Proprietary: fondo1
+                      identification:
+                        Identification: "123456"
+                        SchemeName: TIPODOC_001
+              billeteraNoActiva:
+                description: '`ESCENARIO` Billetera no activa `DADO` que la billetera
+                  no está activa `CUANDO` se consume la capacidad de consulta de saldo
+                  `ENTONCES` se genera una excepción de negocio'
+                value:
+                  GetAccount:
+                    MessageHeader:
+                      MessageIdentification: MSG-20251013-1001
+                      CreationDateTime: 2025-10-13T09:00:00Z
+                    AccountQueryDefinition:
+                      AccountCriteria:
+                        NewCriteria:
+                          SearchCriteria:
+                            AccountIdentification:
+                              Equal:
+                                Other:
+                                  Identification: WALLET-00000000
+                                  SchemeName:
+                                    Proprietary: WalletID
+              clienteInvalido:
+                description: '`ESCENARIO` Cliente inválido `DADO` que el ID de billetera
+                  no está registrado `CUANDO` se consume la capacidad de consulta
+                  de saldo `ENTONCES` se genera una excepción de negocio'
+                value:
+                  GetAccount:
+                    MessageHeader:
+                      MessageIdentification: MSG-20251013-1001
+                      CreationDateTime: 2025-10-13T09:00:00Z
+                    AccountQueryDefinition:
+                      AccountCriteria:
+                        NewCriteria:
+                          SearchCriteria:
+                            AccountIdentification:
+                              Equal:
+                                Other:
+                                  Identification: WALLET-00099999
+                                  SchemeName:
+                                    Proprietary: WalletID
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrieveBalanceResponse'
+              examples:
+                ConsultaExitosa:
+                  value:
+                    ReturnAccount:
+                      MessageHeader:
+                        MessageIdentification: MSG-20251013-1001
+                        CreationDateTime: 2025-10-13T09:00:01Z
+                      ReportOrError:
+                        AccountReport:
+                          AccountOrError:
+                            Account:
+                              Name: Cuenta Principal Wallet Duck
+                              Type:
+                                Code: SVGS
+                              Currency: COP
+                              MultilateralBalance:
+                              - Amount: 1500000
+                                CreditDebitIndicator: CRDT
+                                Code: AVLB
+                          AccountIdentification:
+                            Other:
+                              Identification: WALLET-00012345
+                              SchemeName:
+                                Proprietary: WalletID
+          description: Respuesta exitosa con información de saldo de cuenta
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/failure'
+              examples:
+                BadRequest:
+                  value:
+                    meta:
+                      _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe66
+                      _requestDateTime: 2024-04-09T14:43:09.779-05:00
+                      _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+                    status: 400
+                    title: Bad Request
+                    errors:
+                    - code: SA400
+                      detail: Mensaje de petición mal formado
+          description: Error en la solicitud.
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unauthorizedObject'
+              examples:
+                Unauthorized:
+                  value:
+                    httpCode: "401"
+                    httpMessage: Unauthorized
+                    moreInformation: Invalid client id or secret.
+          description: Credenciales incorrectas.
+        "405":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unauthorizedObject'
+              examples:
+                MethodNotAllowed:
+                  value:
+                    httpCode: "405"
+                    httpMessage: Method Not Allowed
+                    moreInformation: Invalid HTTP method.
+          description: Método HTTP incorrecto.
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrieveBalanceResponse'
+              examples:
+                billeteraNoActiva:
+                  value:
+                    ReturnAccount:
+                      MessageHeader:
+                        MessageIdentification: MSG-20251013-1001
+                        CreationDateTime: 2025-10-13T09:00:00Z
+                      ReportOrError:
+                        AccountReport:
+                          AccountOrError:
+                            BusinessError:
+                              Description: "Error: Billetera no activa"
+                              Error:
+                                Proprietary: BP40022396
+                          AccountIdentification:
+                            Other:
+                              Identification: WALLET-00012345
+                              SchemeName:
+                                Proprietary: WalletID
+                clienteInvalido:
+                  value:
+                    ReturnAccount:
+                      MessageHeader:
+                        MessageIdentification: MSG-20251013-1001
+                        CreationDateTime: 2025-10-13T09:00:00Z
+                      ReportOrError:
+                        AccountReport:
+                          AccountOrError:
+                            BusinessError:
+                              Description: "Error: Billetera no existe"
+                              Error:
+                                Proprietary: BP40022399
+                          AccountIdentification:
+                            Other:
+                              Identification: WALLET-00012345
+                              SchemeName:
+                                Proprietary: WalletID
+          description: El estado del recurso presenta conflictos con los datos de
+            la solicitud.
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/unauthorizedObject'
+              examples:
+                TooManyRequests:
+                  value:
+                    httpCode: "429"
+                    httpMessage: Too Many Requests
+                    moreInformation: Too Many Requests.
+          description: Más peticiones de las permitidas.
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/failure'
+              examples:
+                InternalServerError:
+                  value:
+                    meta:
+                      _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+                      _requestDateTime: 2024-04-09T14:43:09.779-05:00
+                      _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+                    status: 500
+                    title: Internal Server Error
+                    errors:
+                    - code: SP500
+                      detail: Ha ocurrido un error interno controlado en el servidor
+          description: Error interno del servidor.
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/failure'
+              examples:
+                BadGateway:
+                  value:
+                    meta:
+                      _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+                      _requestDateTime: 2024-04-09T14:43:09.779-05:00
+                      _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+                    status: 502
+                    title: Bad Gateway
+                    errors:
+                    - code: SP502
+                      detail: El mensaje de respuesta recibido del servidor es inválido
+          description: Error en la respuesta del proveedor del servicio.
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/failure'
+              examples:
+                ServiceUnavailable:
+                  value:
+                    meta:
+                      _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+                      _requestDateTime: 2024-04-09T14:43:09.779-05:00
+                      _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+                    status: 503
+                    title: Service Unavailable
+                    errors:
+                    - code: SP503
+                      detail: "Por problemas técnicos su transacción no pudo atenderse\
+                        \ en estos momentos, por favor intente más tarde"
+          description: Servicio no disponible.
+        "504":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/failure'
+              examples:
+                GatewayTimeout:
+                  value:
+                    meta:
+                      _messageId: c4e6bd04-5149-11e7-b114-b2f933d5fe68
+                      _requestDateTime: 2024-04-09T14:43:09.779-05:00
+                      _applicationId: acxff62e-6f12-42de-9012-3e7304418abd
+                    status: 504
+                    title: Gateway Timeout
+                    errors:
+                    - code: SP504
+                      detail: El proveedor no respondió en tiempo esperado
+          description: Tiempo de respuesta del proveedor del servicio excedido.
+      security:
+      - clientSecret: []
+        clientId: []
+      operationId: RetrieveBalance
+      summary: Consultar saldo de cuenta interna o billetera
+      description: Permite consultar el saldo de una cuenta interna o billetera de
+        Wallet Duck.
+components:
+  schemas:
+    ActiveCurrencyCode:
+      description: A code allocated to a currency by a Maintenance Agency under an
+        international identification scheme as described in the latest edition of
+        the international standard ISO 4217.
+      pattern: "^[A-Z]{3,3}$"
+      type: string
+    ActiveCurrencyAndAmount:
+      description: Importe monetario con divisa explícita.
+      required:
+      - Amount
+      - Currency
+      type: object
+      properties:
+        Amount:
+          description: Importe numérico (hasta 18 dígitos enteros y 5 decimales).
+          pattern: "^[+]?0*(((0|[1-9][0-9]{0,17})([.]0*)?)|([.][0-9]{1,5}0*)|((?=[1-9.][0-9.]{1,18}0*$)([1-9][0-9]*)?[.][0-9]{0,5}0*))$"
+          type: string
+          example: "1234.56"
+        Currency:
+          $ref: '#/components/schemas/ActiveCurrencyCode'
+      additionalProperties: false
+    ImpliedCurrencyAndAmount:
+      description: Importe donde la divisa está implícita por el contexto.
+      pattern: "^[+]?0*(((0|[1-9][0-9]{0,17})([.]0*)?)|([.][0-9]{1,5}0*)|((?=[1-9.][0-9.]{1,18}0*$)([1-9][0-9]*)?[.][0-9]{0,5}0*))$"
+      type: string
+      example: "100.00"
+    ActiveCurrencyAnd13DecimalAmount:
+      description: Representa un importe monetario con su divisa (13 decimales).
+      required:
+      - Currency
+      - Amount
+      type: object
+      properties:
+        Currency:
+          description: Código de divisa ISO 4217.
+          pattern: "^[A-Z]{3,3}$"
+          type: string
+          example: USD
+        Amount:
+          format: double
+          description: "Importe numérico (alta precisión, 13 decimales)."
+          minimum: 0
+          type: number
+          example: 12345.67890123
+    YesNoIndicator:
+      description: "Indicates a \"Yes\" or \"No\" type of answer. (True = Yes, False\
+        \ = No)"
+      type: boolean
+      example: true
+    InvestmentFundReportRequestV03:
+      description: "Definición del esquema: InvestmentFundReportRequestV03"
+      required:
+      - MessageIdentification
+      - ReportRequest
+      type: object
+      properties:
+        MessageIdentification:
+          $ref: '#/components/schemas/MessageIdentification1'
+        ReportRequest:
+          type: array
+          items:
+            $ref: '#/components/schemas/FundParameters4Choice'
+        identification:
+          $ref: '#/components/schemas/GenericIdentification1'
+          description: ""
+    MessageIdentification1:
+      description: "Definición del esquema: MessageIdentification1"
+      required:
+      - Identification
+      - CreationDateTime
+      type: object
+      properties:
+        Identification:
+          description: Campo Identification de tipo Max35Text
+          maxLength: 35
+          type: string
+        CreationDateTime:
+          format: date-time
+          description: Campo CreationDateTime de tipo ISODateTime
+          type: string
+          example: 2025-01-15T10:30:00Z
+    AdditionalReference10:
+      description: "Definición del esquema: AdditionalReference10"
+      type: object
+      properties:
+        ReferenceIssuer:
+          $ref: '#/components/schemas/PartyIdentification139'
+    PartyIdentification139:
+      description: "Definición del esquema: PartyIdentification139"
+      required:
+      - Party
+      type: object
+      properties:
+        Party:
+          $ref: '#/components/schemas/PartyIdentification125Choice'
+    PartyIdentification125Choice:
+      description: "Definición del esquema: PartyIdentification125Choice"
+      type: object
+      properties:
+        ProprietaryIdentification:
+          $ref: '#/components/schemas/GenericIdentification1'
+    GenericIdentification1:
+      description: "Definición del esquema: GenericIdentification1"
+      required:
+      - Identification
+      type: object
+      properties:
+        Identification:
+          description: Campo Identification de tipo Max35Text
+          maxLength: 35
+          minLength: 1
+          type: string
+          example: "123456"
+        SchemeName:
+          $ref: '#/components/schemas/SchemeName'
+          description: Campo SchemeName de tipo Max35Text
+          maxLength: 35
+          example: ""
+    FundParameters4Choice:
+      description: "Definición del esquema: FundParameters4Choice"
+      type: object
+      properties:
+        Parameters:
+          $ref: '#/components/schemas/FundParameters5'
+    FundParameters5:
+      description: "Definición del esquema: FundParameters5"
+      type: object
+      properties:
+        FinancialInstrumentDetails:
+          type: array
+          items:
+            $ref: '#/components/schemas/FinancialInstrument71'
+    FinancialInstrument71:
+      description: "Definición del esquema: FinancialInstrument71"
+      required:
+      - Identification
+      type: object
+      properties:
+        Identification:
+          $ref: '#/components/schemas/SecurityIdentification19'
+    SecurityIdentification19:
+      description: "Definición del esquema: SecurityIdentification19"
+      type: object
+      properties:
+        OtherIdentification:
+          type: array
+          items:
+            $ref: '#/components/schemas/OtherIdentification1'
+    OtherIdentification1:
+      description: "Definición del esquema: OtherIdentification1"
+      required:
+      - Identification
+      - Type
+      type: object
+      properties:
+        Identification:
+          description: Campo Identification de tipo Max35Text
+          maxLength: 35
+          type: string
+        Type:
+          $ref: '#/components/schemas/IdentificationSource3Choice'
+    IdentificationSource3Choice:
+      description: "Definición del esquema: IdentificationSource3Choice"
+      type: object
+      properties:
+        Proprietary:
+          description: Campo Proprietary de tipo Max35Text
+          maxLength: 35
+          type: string
+    paymentsRequestData:
+      description: Contenedor de datos para paymentsRequest
+      required:
+      - InvestmentFundReportRequest
+      type: object
+      properties:
+        InvestmentFundReportRequest:
+          $ref: '#/components/schemas/InvestmentFundReportRequestV03'
+    paymentsRequest:
+      description: Cuerpo del Request para payments
+      required:
+      - data
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/paymentsRequestData'
+    error:
+      required:
+      - code
+      - detail
+      type: object
+      properties:
+        code:
+          description: "An application-specific error code, expressed as a string\
+            \ value."
+          maxLength: 1000
+          minLength: 1
+          type: string
+          example: BP404
+        detail:
+          description: A human-readable explanation specific to this occurrence of
+            the problem.
+          maxLength: 1000
+          minLength: 1
+          type: string
+          example: Requested resource could not be found
+    failure:
+      description: Mensaje de respuesta cuando ocurre un error.
+      required:
+      - meta
+      - errors
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/meta'
+        status:
+          format: int32
+          description: Código de estado HTTP (status code) asociado al mensaje de
+            error de la respuesta del llamado a la API.
+          maximum: 999
+          minimum: 100
+          type: integer
+        title:
+          description: Titulo asociado al código de estado HTTP (status code) asociado
+            al mensaje de error de la respuesta del llamado a la API.
+          maxLength: 1000
+          minLength: 1
+          type: string
+          example: Not Found
+        errors:
+          description: Lista de errores detectados
+          maxItems: 100
+          type: array
+          items:
+            $ref: '#/components/schemas/error'
+    meta:
+      description: Datos de trazabilidad e información técnica del mensaje.
+      required:
+      - _applicationId
+      - _messageId
+      - _requestDateTime
+      type: object
+      properties:
+        _messageId:
+          maxLength: 36
+          minLength: 36
+          type: string
+          example: 56d6adc5-b25a-4d75-a663-56a62bad4982
+        _requestDateTime:
+          format: date-time
+          type: string
+          example: 2024-04-09T14:43:09.779-05:00
+        _applicationId:
+          maxLength: 1000
+          minLength: 1
+          type: string
+          example: acxff62e-6f12-42de-9012-3e7304418abd
+    unauthorizedObject:
+      required:
+      - httpCode
+      - httpMessage
+      - moreInformation
+      type: object
+      properties:
+        httpCode:
+          maxLength: 1000
+          minLength: 1
+          type: string
+        httpMessage:
+          maxLength: 1000
+          minLength: 1
+          type: string
+        moreInformation:
+          maxLength: 1000
+          minLength: 1
+          type: string
+    SchemeName:
+      description: ""
+      type: object
+      properties:
+        Propietary:
+          description: ""
+          enum:
+          - TIPODOC_001
+          type: string
+          example: TIPODOC_001
+  securitySchemes:
+    OAuthProvider-ClientCredentialsFlow:
+      flows:
+        clientCredentials:
+          tokenUrl: https://oauth-endpoint.com/security/oauth-provider/oauth2/token/
+          scopes:
+            read_some_resource: read some resource
+            write_some_resource: modify some resource
+      type: oauth2
+      description: Proveedor de OAuth para autorización con flujo clientCredentials
+        (Antes llamado application en OpenAPI 2.0)
+      x-ibm-oauth-provider: $(OauthName)
+    clientId:
+      type: apiKey
+      name: Client-Id
+      in: header
+      x-key-type: client_id
+    clientSecret:
+      type: apiKey
+      name: Client-Secret
+      in: header
+      x-key-type: client_secret
+security:
+- clientId: []
+  clientSecret: []

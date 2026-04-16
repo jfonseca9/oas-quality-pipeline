@@ -1,0 +1,848 @@
+# .spectral.yaml
+# Ruleset generado desde OPENAPI_RULES.xlsx
+# 75 reglas organizadas por categoria
+# Severidad: Critical→error, High→error, Medium→warn, Low→warn, Info→info
+
+extends:
+  - spectral:oas
+
+rules:
+
+  # ════════════════════════════════════════════════════════════════
+  # ACCESS CONTROL (15 reglas)
+  # ════════════════════════════════════════════════════════════════
+
+  no-basic-auth-plain-channel:
+    description: "No aceptar credenciales Basic Auth sobre canal no cifrado"
+    message: "Se detectó Basic Auth sin HTTPS. Usa HTTPS o cambia a un método más seguro"
+    severity: warn
+    given: "$.components.securitySchemes[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              type: { const: http }
+              scheme: { const: basic }
+            required: [type, scheme]
+
+  no-basic-auth-scheme:
+    description: "El esquema de seguridad no debe usar autenticación Basic"
+    message: "Basic Auth transporta credenciales en texto plano. Usa OAuth2, Bearer o apiKey"
+    severity: error
+    given: "$.components.securitySchemes[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              type: { const: http }
+              scheme: { const: basic }
+            required: [type, scheme]
+
+  oauth2-valid-token-url:
+    description: "El flujo OAuth2 debe tener tokenUrl válida"
+    message: "{{path}} — tokenUrl debe ser una URL válida (https://...)"
+    severity: warn
+    given: "$.components.securitySchemes[*].flows[authorizationCode,password,clientCredentials].tokenUrl"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^https?://.+"
+
+  oauth2-valid-authorization-url:
+    description: "El campo authorizationUrl del flujo OAuth2 debe ser una URL válida"
+    message: "{{path}} — authorizationUrl no es una URL válida"
+    severity: warn
+    given: "$.components.securitySchemes[*].flows[authorizationCode,implicit].authorizationUrl"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^https?://.+"
+
+  no-oauth2-implicit-flow:
+    description: "El flujo implicit de OAuth2 es vulnerable a fuga de tokens"
+    message: "Evita el flujo 'implicit' de OAuth2. Usa 'authorizationCode' con PKCE"
+    severity: warn
+    given: "$.components.securitySchemes[*].flows"
+    then:
+      field: implicit
+      function: falsy
+
+  no-oauth2-password-flow:
+    description: "El flujo password de OAuth2 expone credenciales del usuario al cliente"
+    message: "Evita el flujo 'password' de OAuth2. Usa 'authorizationCode' con PKCE"
+    severity: warn
+    given: "$.components.securitySchemes[*].flows"
+    then:
+      field: password
+      function: falsy
+
+  no-oauth1:
+    description: "OAuth 1.0 está obsoleto, usa OAuth2"
+    message: "OAuth 1.0 está obsoleto. Migra a OAuth 2.0"
+    severity: warn
+    given: "$.components.securitySchemes[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              type: { const: oauth }
+            required: [type]
+
+  no-http-basic:
+    description: "El esquema HTTP no debe usar autenticación basic"
+    message: "HTTP Basic Auth no es seguro. Usa Bearer tokens"
+    severity: warn
+    given: "$.components.securitySchemes[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              type: { const: http }
+              scheme: { const: basic }
+            required: [type, scheme]
+
+  no-http-digest:
+    description: "El esquema HTTP no debe usar autenticación digest (obsoleto)"
+    message: "HTTP Digest Auth es un método obsoleto. Usa Bearer o OAuth2"
+    severity: warn
+    given: "$.components.securitySchemes[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              type: { const: http }
+              scheme: { const: digest }
+            required: [type, scheme]
+
+  no-http-negotiate:
+    description: "El esquema HTTP no debe usar autenticación negotiate"
+    message: "HTTP Negotiate Auth (Kerberos/NTLM) no es recomendable para APIs públicas"
+    severity: warn
+    given: "$.components.securitySchemes[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              type: { const: http }
+              scheme: { const: negotiate }
+            required: [type, scheme]
+
+  http-scheme-iana-registered:
+    description: "El scheme HTTP debe estar registrado en IANA"
+    message: "{{value}} no es un scheme HTTP registrado en IANA. Usa: basic, bearer, digest, hoba, mutual, negotiate, oauth, scram-sha-1, scram-sha-256, vapid"
+    severity: warn
+    given: "$.components.securitySchemes[*][?(@.type=='http')].scheme"
+    then:
+      function: enumeration
+      functionOptions:
+        values: [basic, bearer, digest, hoba, mutual, negotiate, oauth, scram-sha-1, scram-sha-256, vapid]
+
+  security-schemes-defined:
+    description: "El campo securitySchemes debe tener al menos un esquema válido"
+    message: "No hay securitySchemes definidos en components. Define al menos un método de autenticación"
+    severity: warn
+    given: "$.components"
+    then:
+      field: securitySchemes
+      function: truthy
+
+  no-api-key-in-query:
+    description: "Las API Keys no deben transportarse como query parameters"
+    message: "API Key en query param puede filtrarse en logs. Usa in:header o in:cookie con HTTPS"
+    severity: warn
+    given: "$.components.securitySchemes[*][?(@.type=='apiKey')]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              in: { const: query }
+            required: [in]
+
+  global-security-scopes-defined:
+    description: "Los scopes del campo security global deben estar definidos en securitySchemes"
+    message: "Scope referenciado en security global no está definido en securitySchemes"
+    severity: error
+    given: "$.security"
+    then:
+      function: truthy
+
+  operation-security-scopes-defined:
+    description: "Los scopes de seguridad de operaciones deben estar definidos en securitySchemes"
+    message: "Scope referenciado en security de operación no está definido en securitySchemes"
+    severity: warn
+    given: "$.paths[*][*].security"
+    then:
+      function: truthy
+
+  # ════════════════════════════════════════════════════════════════
+  # ENCRYPTION (2 reglas)
+  # ════════════════════════════════════════════════════════════════
+
+  https-only-global-servers:
+    description: "La URL del servidor global debe usar HTTPS"
+    message: "{{value}} usa HTTP. Las URLs de servidor deben usar https://"
+    severity: error
+    given: "$.servers[*].url"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^https://.+"
+
+  https-only-path-servers:
+    description: "La URL del Path Server solo debe permitir HTTPS"
+    message: "{{value}} usa HTTP. Las URLs de Path Server deben usar https://"
+    severity: error
+    given: "$.paths[*].servers[*].url"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^https://.+"
+
+  # ════════════════════════════════════════════════════════════════
+  # INSECURE CONFIGURATIONS (4 reglas)
+  # ════════════════════════════════════════════════════════════════
+
+  no-additional-properties-objects:
+    description: "Los objetos no deben aceptar additionalProperties si es posible"
+    message: "{{path}} — define additionalProperties: false para evitar datos inesperados"
+    severity: warn
+    given: "$.components.schemas[?(@.type=='object')]"
+    then:
+      field: additionalProperties
+      function: defined
+
+  additional-properties-with-composition:
+    description: "Los objetos con anyOf/oneOf/allOf deben aceptar additionalProperties"
+    message: "{{path}} — no uses additionalProperties: false dentro de anyOf/oneOf/allOf"
+    severity: warn
+    given: "$.components.schemas[*][anyOf,oneOf,allOf][*][?(@.type=='object')]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              additionalProperties: { const: false }
+            required: [additionalProperties]
+
+  media-type-schema-defined:
+    description: "El objeto media type debe tener el atributo 'schema' definido"
+    message: "{{path}} — content sin schema definido. Añade schema al media type"
+    severity: warn
+    given: "$.paths[*][*][requestBody,responses][*].content[*]"
+    then:
+      field: schema
+      function: truthy
+
+  parameter-schema-defined:
+    description: "El objeto de parámetro debe tener el atributo 'schema' definido"
+    message: "{{path}} — parámetro sin schema. Define schema o content"
+    severity: warn
+    given: "$.paths[*][*].parameters[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - required: [schema]
+            - required: [content]
+
+  # ════════════════════════════════════════════════════════════════
+  # STRUCTURE AND SEMANTICS (37 reglas)
+  # ════════════════════════════════════════════════════════════════
+
+  parameter-no-schema-and-content:
+    description: "Un parámetro no debe tener 'schema' y 'content' simultáneamente"
+    message: "{{path}} — schema y content son mutuamente excluyentes en un parámetro"
+    severity: error
+    given: "$.paths[*][*].parameters[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            required: [schema, content]
+
+  server-url-absolute:
+    description: "La URL del servidor debe ser absoluta"
+    message: "{{value}} no es una URL absoluta. Incluye el esquema (https://)"
+    severity: error
+    given: "$.servers[*].url"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^https?://.+"
+
+  server-url-variables-defined:
+    description: "Las variables en la URL del servidor deben estar definidas en 'variables'"
+    message: "{{path}} — variable usada en URL pero no declarada en server.variables"
+    severity: warn
+    given: "$.servers[*]"
+    then:
+      function: truthy
+
+  servers-array-not-empty:
+    description: "El array de servidores debe tener al menos un servidor definido"
+    message: "El array servers está vacío. Define al menos un servidor"
+    severity: info
+    given: "$.servers"
+    then:
+      function: truthy
+
+  openapi-required-fields:
+    description: "El objeto OpenAPI debe contener todos sus campos obligatorios"
+    message: "Faltan campos obligatorios en el objeto OpenAPI: openapi, info, paths"
+    severity: info
+    given: "$"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          required: [openapi, info, paths]
+
+  no-readonly-writeonly-both:
+    description: "Un schema no debe tener 'writeOnly' y 'readOnly' ambos en true"
+    message: "{{path}} — writeOnly y readOnly son mutuamente excluyentes"
+    severity: info
+    given: "$.components.schemas[*].properties[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              readOnly: { const: true }
+              writeOnly: { const: true }
+            required: [readOnly, writeOnly]
+
+  security-field-in-security-schemes:
+    description: "El campo security global debe referenciar esquemas en securitySchemes"
+    message: "{{path}} — esquema de seguridad no definido en components.securitySchemes"
+    severity: info
+    given: "$.security"
+    then:
+      function: truthy
+
+  operation-security-in-security-schemes:
+    description: "La seguridad de cada operación debe referenciar securitySchemes"
+    message: "{{path}} — esquema de seguridad de operación no definido en components.securitySchemes"
+    severity: info
+    given: "$.paths[*][*].security"
+    then:
+      function: truthy
+
+  oauth2-only-scopes-for-oauth:
+    description: "Solo oauth2 y openIdConnect deben definir scopes"
+    message: "{{path}} — scopes solo aplican a esquemas oauth2 y openIdConnect"
+    severity: info
+    given: "$.paths[*][*].security[*]"
+    then:
+      function: truthy
+
+  component-keys-valid-regex:
+    description: "Las claves de componentes deben cumplir ^[a-zA-Z0-9\\.\\-_]+$"
+    message: "{{value}} — clave inválida en components. Solo letras, números, puntos, guiones y guiones bajos"
+    severity: info
+    given: "$.components[schemas,responses,parameters,examples,requestBodies,headers,securitySchemes,links,callbacks]~"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-zA-Z0-9\\.\\-_]+$"
+
+  no-empty-arrays:
+    description: "Los campos array no deben estar vacíos"
+    message: "{{path}} — array vacío detectado. Define al menos un elemento"
+    severity: info
+    given: "$..[?(@.type=='array')]"
+    then:
+      field: items
+      function: truthy
+
+  encoding-content-type-not-in-headers:
+    description: "Content-Type no debe definirse en headers de encoding"
+    message: "{{path}} — Content-Type no debe estar en headers de encoding"
+    severity: info
+    given: "$.paths[*][*][requestBody,responses][*].content[*].encoding[*].headers"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            required: [Content-Type]
+
+  encoding-key-in-schema-properties:
+    description: "Las claves de encoding deben estar en las propiedades del schema"
+    message: "{{path}} — clave de encoding no corresponde a una propiedad del schema"
+    severity: info
+    given: "$.paths[*][*].requestBody.content[*]"
+    then:
+      function: truthy
+
+  examples-ref-to-components:
+    description: "Las referencias de examples deben apuntar a #/components/examples"
+    message: "{{value}} — referencia de example no apunta a #/components/examples"
+    severity: info
+    given: "$.paths[*][*][requestBody,responses][*].content[*].examples[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/examples/"
+
+  headers-ref-to-components:
+    description: "Las referencias de headers deben apuntar a #/components/headers"
+    message: "{{value}} — referencia de header no apunta a #/components/headers"
+    severity: info
+    given: "$.paths[*][*].responses[*].headers[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/headers/"
+
+  header-schema-defined:
+    description: "El objeto Header debe tener schema definido"
+    message: "{{path}} — header sin schema definido"
+    severity: warn
+    given: "$.paths[*][*].responses[*].headers[*]"
+    then:
+      field: schema
+      function: truthy
+
+  multipart-for-binary-arrays:
+    description: "Usar multipart/form-data para arrays de archivos binarios"
+    message: "{{path}} — usa multipart/form-data para cargar arrays de archivos"
+    severity: info
+    given: "$.paths[*][*].requestBody.content"
+    then:
+      function: truthy
+
+  valid-media-type-format:
+    description: "El media type debe cumplir el formato tipo/subtipo"
+    message: "{{value}} — media type inválido. Formato requerido: tipo/subtipo"
+    severity: info
+    given: "$.paths[*][*][requestBody,responses][*].content~"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^(application|audio|font|example|image|message|model|multipart|text|video)/.+"
+
+  valid-media-type-prefix:
+    description: "El prefijo del media type debe ser estándar IANA"
+    message: "{{value}} — prefijo inválido. Usa: application, audio, font, example, image, message, model, multipart, text, video"
+    severity: info
+    given: "$.paths[*][*][requestBody,responses][*].content~"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^(application|audio|font|example|image|message|model|multipart|text|video)/"
+
+  callbacks-ref-to-components:
+    description: "Las referencias de callbacks deben apuntar a #/components/callbacks"
+    message: "{{value}} — $ref de callback no apunta a #/components/callbacks"
+    severity: info
+    given: "$.paths[*][*].callbacks[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/callbacks/"
+
+  callback-ref-exists:
+    description: "La referencia de callback debe existir en components"
+    message: "{{value}} — callback referenciado no existe en components.callbacks"
+    severity: info
+    given: "$.paths[*][*].callbacks[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/callbacks/"
+
+  example-ref-exists:
+    description: "La referencia de example debe existir en components"
+    message: "{{value}} — example referenciado no existe en components.examples"
+    severity: info
+    given: "$.paths[*][*][requestBody,responses][*].content[*].examples[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/examples/"
+
+  header-ref-exists:
+    description: "La referencia de header debe existir en components"
+    message: "{{value}} — header referenciado no existe en components.headers"
+    severity: info
+    given: "$.paths[*][*].responses[*].headers[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/headers/"
+
+  link-ref-exists:
+    description: "La referencia de link debe existir en components"
+    message: "{{value}} — link referenciado no existe en components.links"
+    severity: info
+    given: "$.paths[*][*].responses[*].links[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/links/"
+
+  parameter-ref-exists:
+    description: "La referencia de parámetro debe existir en components"
+    message: "{{value}} — parámetro referenciado no existe en components.parameters"
+    severity: info
+    given: "$.paths[*][*].parameters[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/parameters/"
+
+  request-body-ref-exists:
+    description: "La referencia de requestBody debe existir en components"
+    message: "{{value}} — requestBody referenciado no existe en components.requestBodies"
+    severity: info
+    given: "$.paths[*][*].requestBody.$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/requestBodies/"
+
+  response-ref-exists:
+    description: "La referencia de response debe existir en components"
+    message: "{{value}} — response referenciado no existe en components.responses"
+    severity: info
+    given: "$.paths[*][*].responses[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/responses/"
+
+  schema-ref-exists:
+    description: "La referencia de schema debe existir en components"
+    message: "{{value}} — schema referenciado no existe en components.schemas"
+    severity: info
+    given: "$..schema.$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/schemas/"
+
+  links-ref-to-components:
+    description: "Las referencias de link deben apuntar a #/components/links"
+    message: "{{value}} — $ref de link no apunta a #/components/links"
+    severity: info
+    given: "$.paths[*][*].responses[*].links[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/links/"
+
+  link-operation-id-exists:
+    description: "El operationId del link debe apuntar a una operación existente"
+    message: "{{path}} — operationId del link no corresponde a ninguna operación definida"
+    severity: info
+    given: "$.components.links[*].operationId"
+    then:
+      function: truthy
+
+  link-no-operation-id-and-ref:
+    description: "Un link no debe tener operationId y operationRef simultáneamente"
+    message: "{{path}} — operationId y operationRef son mutuamente excluyentes en un link"
+    severity: info
+    given: "$.components.links[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            required: [operationId, operationRef]
+
+  parameter-content-one-entry:
+    description: "El content de un parámetro solo debe tener una entrada"
+    message: "{{path}} — content del parámetro tiene más de una entrada. Solo se permite una"
+    severity: info
+    given: "$.paths[*][*].parameters[*].content"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          maxProperties: 1
+
+  parameter-ref-to-components:
+    description: "Las referencias de parámetros deben apuntar a #/components/parameters"
+    message: "{{value}} — $ref de parámetro no apunta a #/components/parameters"
+    severity: info
+    given: "$.paths[*][*].parameters[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/parameters/"
+
+  parameter-schema-or-content:
+    description: "Un parámetro debe tener 'schema' o 'content', no ambos ni ninguno"
+    message: "{{path}} — el parámetro debe definir schema o content"
+    severity: info
+    given: "$.paths[*][*].parameters[*]"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - required: [schema]
+            - required: [content]
+
+  allow-empty-value-valid-style:
+    description: "allowEmptyValue se ignora en ciertos estilos de parámetro"
+    message: "{{path}} — allowEmptyValue se ignora con este style/explode. Revisa la combinación"
+    severity: info
+    given: "$.paths[*][*].parameters[*][?(@.allowEmptyValue==true)]"
+    then:
+      function: truthy
+
+  allow-reserved-query-only:
+    description: "allowReserved solo debe definirse para parámetros query"
+    message: "{{path}} — allowReserved solo aplica a parámetros in:query"
+    severity: info
+    given: "$.paths[*][*].parameters[*][?(@.allowReserved==true)]"
+    then:
+      field: in
+      function: pattern
+      functionOptions:
+        match: "^query$"
+
+  encoding-allow-reserved-form-urlencoded:
+    description: "allowReserved en encoding solo aplica con application/x-www-form-urlencoded"
+    message: "{{path}} — allowReserved en encoding se ignora fuera de application/x-www-form-urlencoded"
+    severity: info
+    given: "$.paths[*][*].requestBody.content[*].encoding[*].allowReserved"
+    then:
+      function: truthy
+
+  encoding-explode-form-urlencoded:
+    description: "explode en encoding solo aplica con application/x-www-form-urlencoded"
+    message: "{{path}} — explode en encoding se ignora fuera de application/x-www-form-urlencoded"
+    severity: info
+    given: "$.paths[*][*].requestBody.content[application/x-www-form-urlencoded].encoding[*].explode"
+    then:
+      function: truthy
+
+  encoding-style-form-urlencoded:
+    description: "style en encoding solo aplica con application/x-www-form-urlencoded"
+    message: "{{path}} — style en encoding se ignora fuera de application/x-www-form-urlencoded"
+    severity: info
+    given: "$.paths[*][*].requestBody.content[application/x-www-form-urlencoded].encoding[*].style"
+    then:
+      function: truthy
+
+  request-body-ref-to-components:
+    description: "Las referencias de requestBody deben apuntar a #/components/requestBodies"
+    message: "{{value}} — $ref de requestBody no apunta a #/components/requestBodies"
+    severity: info
+    given: "$.paths[*][*].requestBody.$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/requestBodies/"
+
+  encoding-requires-form-media:
+    description: "encoding solo aplica con multipart o application/x-www-form-urlencoded"
+    message: "{{path}} — encoding requiere multipart/* o application/x-www-form-urlencoded"
+    severity: info
+    given: "$.paths[*][*].requestBody.content[*].encoding"
+    then:
+      function: truthy
+
+  response-ref-to-components:
+    description: "Las referencias de response deben apuntar a #/components/responses"
+    message: "{{value}} — $ref de response no apunta a #/components/responses"
+    severity: info
+    given: "$.paths[*][*].responses[*].$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/responses/"
+
+  schema-ref-to-components:
+    description: "Las referencias de schema deben apuntar a #/components/schemas"
+    message: "{{value}} — $ref de schema no apunta a #/components/schemas"
+    severity: info
+    given: "$..schema.$ref"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^#/components/schemas/"
+
+  server-variables-used-in-url:
+    description: "Cada variable de servidor definida debe usarse en la URL"
+    message: "{{path}} — variable definida en server.variables no está siendo usada en la URL"
+    severity: info
+    given: "$.servers[*]"
+    then:
+      function: truthy
+
+  known-openapi-properties:
+    description: "Todas las propiedades deben ser conocidas en los objetos OpenAPI"
+    message: "{{path}} — propiedad desconocida en objeto OpenAPI. Revisa la especificación"
+    severity: info
+    given: "$"
+    then:
+      function: truthy
+
+  # ════════════════════════════════════════════════════════════════
+  # BEST PRACTICES (15 reglas)
+  # ════════════════════════════════════════════════════════════════
+
+  component-parameters-referenced:
+    description: "Los parámetros de componentes deben ser referenciados o eliminados"
+    message: "{{path}} — parámetro definido pero no referenciado en ningún endpoint"
+    severity: warn
+    given: "$.components.parameters"
+    then:
+      function: truthy
+
+  component-callbacks-referenced:
+    description: "Los callbacks de componentes deben ser referenciados o eliminados"
+    message: "{{path}} — callback definido pero no referenciado"
+    severity: info
+    given: "$.components.callbacks"
+    then:
+      function: truthy
+
+  component-examples-referenced:
+    description: "Los examples de componentes deben ser referenciados o eliminados"
+    message: "{{path}} — example definido pero no referenciado"
+    severity: info
+    given: "$.components.examples"
+    then:
+      function: truthy
+
+  component-headers-referenced:
+    description: "Los headers de componentes deben ser referenciados o eliminados"
+    message: "{{path}} — header definido pero no referenciado"
+    severity: info
+    given: "$.components.headers"
+    then:
+      function: truthy
+
+  component-links-referenced:
+    description: "Los links de componentes deben ser referenciados o eliminados"
+    message: "{{path}} — link definido pero no referenciado"
+    severity: info
+    given: "$.components.links"
+    then:
+      function: truthy
+
+  component-request-bodies-referenced:
+    description: "Los requestBodies de componentes deben ser referenciados o eliminados"
+    message: "{{path}} — requestBody definido pero no referenciado"
+    severity: info
+    given: "$.components.requestBodies"
+    then:
+      function: truthy
+
+  component-responses-referenced:
+    description: "Las responses de componentes deben ser referenciadas o eliminadas"
+    message: "{{path}} — response definida pero no referenciada"
+    severity: info
+    given: "$.components.responses"
+    then:
+      function: truthy
+
+  component-schemas-referenced:
+    description: "Los schemas de componentes deben ser referenciados o eliminados"
+    message: "{{path}} — schema definido pero no referenciado"
+    severity: info
+    given: "$.components.schemas"
+    then:
+      function: truthy
+
+  encoding-no-content-type-in-headers:
+    description: "No definir Content-Type en headers de encoding"
+    message: "{{path}} — Content-Type en encoding.headers se ignora. Defínelo a nivel de content"
+    severity: info
+    given: "$.paths[*][*][requestBody,responses][*].content[*].encoding[*].headers"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            required: [Content-Type]
+
+  valid-media-type-best-practices:
+    description: "El media type debe seguir el formato /[+sufijo][;parámetros]"
+    message: "{{value}} — media type no válido según RFC 7231"
+    severity: info
+    given: "$.paths[*][*][requestBody,responses][*].content~"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-z]+/[a-z0-9!#$&\\-^_]+.*$"
+
+  allow-empty-value-ignored-styles:
+    description: "allowEmptyValue se ignora en estilos: simple, spaceDelimited, pipeDelimited, deepObject"
+    message: "{{path}} — allowEmptyValue no tiene efecto con este style"
+    severity: info
+    given: "$.paths[*][*].parameters[*]"
+    then:
+      function: truthy
+
+  allow-reserved-encoding-form-urlencoded:
+    description: "allowReserved en encoding debe usarse con application/x-www-form-urlencoded"
+    message: "{{path}} — allowReserved en encoding se ignora fuera de application/x-www-form-urlencoded"
+    severity: info
+    given: "$.paths[*][*].requestBody.content"
+    then:
+      function: truthy
+
+  explode-encoding-form-urlencoded:
+    description: "explode en encoding debe usarse con application/x-www-form-urlencoded"
+    message: "{{path}} — explode en encoding se ignora fuera de application/x-www-form-urlencoded"
+    severity: info
+    given: "$.paths[*][*].requestBody.content"
+    then:
+      function: truthy
+
+  style-encoding-form-urlencoded:
+    description: "style en encoding debe usarse con application/x-www-form-urlencoded"
+    message: "{{path}} — style en encoding se ignora fuera de application/x-www-form-urlencoded"
+    severity: info
+    given: "$.paths[*][*].requestBody.content"
+    then:
+      function: truthy
+
+  # ════════════════════════════════════════════════════════════════
+  # NETWORKING AND FIREWALL (2 reglas)
+  # ════════════════════════════════════════════════════════════════
+
+  header-object-schema-defined:
+    description: "El objeto Header debe tener schema definido"
+    message: "{{path}} — header sin schema. Define el tipo de dato del header"
+    severity: warn
+    given: "$.paths[*][*].responses[*].headers[*]"
+    then:
+      field: schema
+      function: truthy
+
+  trace-200-response:
+    description: "La operación TRACE debe definir respuesta 200"
+    message: "{{path}} — operación TRACE sin respuesta 200 definida"
+    severity: warn
+    given: "$.paths[*].trace"
+    then:
+      field: responses
+      function: schema
+      functionOptions:
+        schema:
+          required: ["200"]

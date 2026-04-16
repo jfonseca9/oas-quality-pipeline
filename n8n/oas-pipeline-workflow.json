@@ -1,0 +1,223 @@
+{
+  "name": "OAS Contract Quality Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "oas-pipeline",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook — GitHub Push",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "oas-pipeline-trigger",
+      "notes": "Recibe el webhook de GitHub cuando hay un push.\nConfigura en GitHub: Settings → Webhooks → Add webhook\nURL: https://tu-n8n.com/webhook/oas-pipeline\nContent type: application/json\nEvents: Just the push event"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrae información relevante del payload de GitHub\nconst payload = $input.first().json;\nconst body = payload.body ?? payload;\n\nconst branch = body.ref?.replace('refs/heads/', '') ?? 'main';\nconst repoFullName = body.repository?.full_name ?? '';\nconst commitSha = body.after ?? body.head_commit?.id ?? '';\nconst pusher = body.pusher?.name ?? 'unknown';\n\n// Verificar si el push incluye cambios en archivos YAML de API\nconst changedFiles = body.commits?.flatMap(c => [\n  ...(c.added ?? []),\n  ...(c.modified ?? [])\n]) ?? [];\n\nconst hasOasChanges = changedFiles.some(f => \n  f.endsWith('.yaml') || f.endsWith('.yml')\n);\n\nreturn [{\n  json: {\n    branch,\n    repoFullName,\n    commitSha,\n    pusher,\n    hasOasChanges,\n    changedFiles,\n    rawUrl: `https://raw.githubusercontent.com/${repoFullName}/${branch}/openapi.yaml`,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "extract-payload",
+      "name": "Extraer info del push",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "check-oas",
+              "leftValue": "={{ $json.hasOasChanges }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-oas-changes",
+      "name": "¿Cambió algún YAML?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.rawUrl }}",
+        "options": {
+          "response": { "response": { "responseFormat": "text" } }
+        }
+      },
+      "id": "download-yaml",
+      "name": "Descargar openapi.yaml",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200],
+      "notes": "Descarga el YAML directamente desde el repo.\nSi el repo es privado, agrega header Authorization: token {{ $env.GITHUB_TOKEN }}"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Guardar el YAML en el filesystem donde corre N8N\n// para que el script de pipeline pueda leerlo\nconst fs = require('fs');\nconst path = require('path');\n\nconst yamlContent = $input.first().json.data ?? $input.first().json;\nconst workDir = process.env.PIPELINE_WORK_DIR ?? '/tmp/oas-pipeline';\n\nfs.mkdirSync(workDir, { recursive: true });\nfs.writeFileSync(path.join(workDir, 'openapi.yaml'), yamlContent, 'utf8');\n\nreturn [{\n  json: {\n    ...$('Extraer info del push').first().json,\n    workDir,\n    yamlPath: path.join(workDir, 'openapi.yaml')\n  }\n}];"
+      },
+      "id": "save-yaml",
+      "name": "Guardar YAML en disco",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "command": "cd {{ $json.workDir }} && SONAR_TOKEN={{ $env.SONAR_TOKEN }} SONAR_ORG={{ $env.SONAR_ORG }} SONAR_PROJECT_KEY={{ $env.SONAR_PROJECT_KEY }} OAS_FILE=openapi.yaml bash /opt/oas-pipeline/scripts/pipeline.sh 2>&1",
+        "options": { "timeout": 300000 }
+      },
+      "id": "run-pipeline",
+      "name": "Ejecutar pipeline.sh",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1340, 200],
+      "notes": "Ejecuta el pipeline completo:\n1. Genera ejemplos\n2. Valida con Spectral\n3. Envía a SonarCloud\n4. Consulta Quality Gate\n\nVariables de entorno necesarias en N8N Settings → Environment:\n- SONAR_TOKEN\n- SONAR_ORG\n- SONAR_PROJECT_KEY\n- PIPELINE_WORK_DIR (default: /tmp/oas-pipeline)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parsear el resultado del pipeline\nconst output = $input.first().json.stdout ?? '';\nconst exitCode = $input.first().json.exitCode ?? 0;\n\nlet result;\ntry {\n  // El script emite el JSON como última línea de stdout\n  const lines = output.trim().split('\\n');\n  const jsonLine = lines.reverse().find(l => l.trim().startsWith('{'));\n  result = JSON.parse(jsonLine ?? '{}');\n} catch {\n  result = { status: exitCode === 0 ? 'PASSED' : 'FAILED', raw: output };\n}\n\nreturn [{\n  json: {\n    ...result,\n    exitCode,\n    branch: $('Extraer info del push').first().json.branch,\n    commitSha: $('Extraer info del push').first().json.commitSha,\n    pusher: $('Extraer info del push').first().json.pusher,\n    passed: result.status === 'PASSED'\n  }\n}];"
+      },
+      "id": "parse-result",
+      "name": "Parsear resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true },
+          "conditions": [
+            {
+              "id": "check-pass",
+              "leftValue": "={{ $json.passed }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-gate",
+      "name": "¿Quality Gate OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=",
+              "value": "={{ JSON.stringify({\n  text: '✅ OAS Contract — Quality Gate PASSED',\n  attachments: [{\n    color: 'good',\n    fields: [\n      { title: 'Branch', value: $json.branch, short: true },\n      { title: 'Commit', value: $json.commitSha?.slice(0,8), short: true },\n      { title: 'Spectral Issues', value: String($json.spectral?.totalIssues ?? 0), short: true },\n      { title: 'Quality Gate', value: $json.sonarCloud?.qualityGate, short: true },\n      { title: 'Dashboard', value: $json.sonarCloud?.dashboardUrl }\n    ]\n  }]\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-passed",
+      "name": "Notificar PASSED (Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 100],
+      "notes": "Envía notificación a Slack cuando el pipeline pasa.\nConfigura SLACK_WEBHOOK_URL en N8N Settings → Environment"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=",
+              "value": "={{ JSON.stringify({\n  text: '❌ OAS Contract — Quality Gate FAILED',\n  attachments: [{\n    color: 'danger',\n    fields: [\n      { title: 'Branch', value: $json.branch, short: true },\n      { title: 'Pusher', value: $json.pusher, short: true },\n      { title: 'Spectral Errors', value: String($json.spectral?.errors ?? 0), short: true },\n      { title: 'Quality Gate', value: $json.sonarCloud?.qualityGate, short: true },\n      { title: 'Dashboard (ver issues)', value: $json.sonarCloud?.dashboardUrl }\n    ]\n  }]\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-failed",
+      "name": "Notificar FAILED (Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 320]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'skipped', reason: 'No OAS files changed' }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "skip-response",
+      "name": "Responder — sin cambios YAML",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 460]
+    }
+  ],
+  "connections": {
+    "Webhook — GitHub Push": {
+      "main": [[{ "node": "Extraer info del push", "type": "main", "index": 0 }]]
+    },
+    "Extraer info del push": {
+      "main": [[{ "node": "¿Cambió algún YAML?", "type": "main", "index": 0 }]]
+    },
+    "¿Cambió algún YAML?": {
+      "main": [
+        [{ "node": "Descargar openapi.yaml", "type": "main", "index": 0 }],
+        [{ "node": "Responder — sin cambios YAML", "type": "main", "index": 0 }]
+      ]
+    },
+    "Descargar openapi.yaml": {
+      "main": [[{ "node": "Guardar YAML en disco", "type": "main", "index": 0 }]]
+    },
+    "Guardar YAML en disco": {
+      "main": [[{ "node": "Ejecutar pipeline.sh", "type": "main", "index": 0 }]]
+    },
+    "Ejecutar pipeline.sh": {
+      "main": [[{ "node": "Parsear resultado", "type": "main", "index": 0 }]]
+    },
+    "Parsear resultado": {
+      "main": [[{ "node": "¿Quality Gate OK?", "type": "main", "index": 0 }]]
+    },
+    "¿Quality Gate OK?": {
+      "main": [
+        [{ "node": "Notificar PASSED (Slack)", "type": "main", "index": 0 }],
+        [{ "node": "Notificar FAILED (Slack)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "oas-pipeline"
+  },
+  "tags": ["api", "quality", "openapi"]
+}
